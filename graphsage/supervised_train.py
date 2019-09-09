@@ -6,7 +6,7 @@ import time
 import tensorflow as tf
 import numpy as np
 import sklearn
-from sklearn import metrics
+from sklearn import metrics # sklearn.matrics
 
 from graphsage.supervised_models import SupervisedGraphsage
 from graphsage.models import SAGEInfo
@@ -62,12 +62,12 @@ GPU_MEM_FRACTION = 0.8
 
 def calc_f1(y_true, y_pred):
     if not FLAGS.sigmoid:
-        y_true = np.argmax(y_true, axis=1)
+        y_true = np.argmax(y_true, axis=1) # np.argmax: return the index of the max element, along the axis
         y_pred = np.argmax(y_pred, axis=1)
     else:
-        y_pred[y_pred > 0.5] = 1
-        y_pred[y_pred <= 0.5] = 0
-    return metrics.f1_score(y_true, y_pred, average="micro"), metrics.f1_score(y_true, y_pred, average="macro")
+        y_pred[y_pred > 0.5] = 1 # tricky expression
+        y_pred[y_pred <= 0.5] = 0 
+    return metrics.f1_score(y_true, y_pred, average="micro"), metrics.f1_score(y_true, y_pred, average="macro")  #micro f1 score and macro f1 score
 
 # Define model evaluation function
 def evaluate(sess, model, minibatch_iter, size=None):
@@ -121,10 +121,10 @@ def construct_placeholders(num_classes):
 
 def train(train_data, test_data=None):
 
-    G = train_data[0]
-    features = train_data[1]
-    id_map = train_data[2]
-    class_map  = train_data[4]
+    G = train_data[0] # G is a networkx graph
+    features = train_data[1] # features is a N*d numpy array
+    id_map = train_data[2] # a dict that maps node indexes in nx.Graph to consective integer ids
+    class_map  = train_data[4] # a dict that maps node indexes to class indexes
     if isinstance(list(class_map.values())[0], list):
         num_classes = len(list(class_map.values())[0])
     else:
@@ -132,9 +132,9 @@ def train(train_data, test_data=None):
 
     if not features is None:
         # pad with dummy zero vector
-        features = np.vstack([features, np.zeros((features.shape[1],))])
+        features = np.vstack([features, np.zeros((features.shape[1],))]) # fake point with 0 features
 
-    context_pairs = train_data[3] if FLAGS.random_context else None
+    context_pairs = train_data[3] if FLAGS.random_context else None # short expression for conditioned assignment
     placeholders = construct_placeholders(num_classes)
     minibatch = NodeMinibatchIterator(G, 
             id_map,

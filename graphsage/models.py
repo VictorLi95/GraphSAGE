@@ -177,6 +177,7 @@ class GeneralizedModel(Model):
 
 # SAGEInfo is a namedtuple that specifies the parameters 
 # of the recursive GraphSAGE layers
+# namedtuple
 SAGEInfo = namedtuple("SAGEInfo",
     ['layer_name', # name of the layer (to get feature embedding etc.)
      'neigh_sampler', # callable neigh_sampler constructor
@@ -207,6 +208,11 @@ class SampleAndAggregate(GeneralizedModel):
             - model_size: one of "small" and "big"
             - identity_dim: Set to positive int to use identity features (slow and cannot generalize, but better accuracy)
         '''
+        '''
+        The class SampleAndAggregate contains the core implementation of GraphSAGE algorithm.
+        The function 'aggregate' takes a batch of input nodes and returns the final embeddings of these ids, just like the 'encoder' in euler.
+        '''
+
         super(SampleAndAggregate, self).__init__(**kwargs)
         if aggregator_type == "mean":
             self.aggregator_cls = MeanAggregator
@@ -227,17 +233,19 @@ class SampleAndAggregate(GeneralizedModel):
         self.model_size = model_size
         self.adj_info = adj
         if identity_dim > 0:
-           self.embeds = tf.get_variable("node_embeddings", [adj.get_shape().as_list()[0], identity_dim])
+           self.embeds = tf.get_variable("node_embeddings", [adj.get_shape().as_list()[0], identity_dim]) # in tensorflow, tensor.get_shape().as_list()
         else:
            self.embeds = None
+        '''a total of 2*2=4 conditions are discussed: the model has features as input or not & the model builds id-based embeddings or not'''
         if features is None: 
             if identity_dim == 0:
                 raise Exception("Must have a positive value for identity feature dimension if no input features given.")
             self.features = self.embeds
         else:
-            self.features = tf.Variable(tf.constant(features, dtype=tf.float32), trainable=False)
+            self.features = tf.Variable(tf.constant(features, dtype=tf.float32), trainable=False) # define a tensorflow Variable from constants
             if not self.embeds is None:
                 self.features = tf.concat([self.embeds, self.features], axis=1)
+        
         self.degrees = degrees
         self.concat = concat
 
@@ -261,17 +269,17 @@ class SampleAndAggregate(GeneralizedModel):
         
         if batch_size is None:
             batch_size = self.batch_size
-        samples = [inputs]
+        samples = [inputs] # [ a tensor of shape (batch_size) ]
         # size of convolution support at each layer per node
         support_size = 1
-        support_sizes = [support_size]
+        support_sizes = [support_size] # [ 1 ]
         for k in range(len(layer_infos)):
-            t = len(layer_infos) - k - 1
-            support_size *= layer_infos[t].num_samples
+            t = len(layer_infos) - k - 1 # k 0,1,2 -> t 2,1,0
+            support_size *= layer_infos[t].num_samples # 1->5->25->125
             sampler = layer_infos[t].neigh_sampler
             node = sampler((samples[k], layer_infos[t].num_samples))
-            samples.append(tf.reshape(node, [support_size * batch_size,]))
-            support_sizes.append(support_size)
+            samples.append(tf.reshape(node, [support_size * batch_size,])) # example: samples [shape (batch_size) tensor, shape (batch_size*5) tensor, shape (batch_size*5*5) tensor, ... ]
+            support_sizes.append(support_size) # example: support_sizes = [1,5,25,125]
         return samples, support_sizes
 
 
@@ -296,13 +304,14 @@ class SampleAndAggregate(GeneralizedModel):
             batch_size = self.batch_size
 
         # length: number of layers + 1
-        hidden = [tf.nn.embedding_lookup(input_features, node_samples) for node_samples in samples]
+        hidden = [tf.nn.embedding_lookup(input_features, node_samples) for node_samples in samples] # example: hidden [shape (batch_size, dim) tensor, shape (batch_size*5, dim) tensor, ...]
+        #the init value of hidden is the input features of all the nodes in the fanouts
         new_agg = aggregators is None
         if new_agg:
             aggregators = []
-        for layer in range(len(num_samples)):
+        for layer in range(len(num_samples)): # example: num_samples = [5,5,5] layer = 0,1,2
             if new_agg:
-                dim_mult = 2 if concat and (layer != 0) else 1
+                dim_mult = 2 if concat and (layer != 0) else 1 # short expression for conditioned assignment
                 # aggregator at current layer
                 if layer == len(num_samples) - 1:
                     aggregator = self.aggregator_cls(dim_mult*dims[layer], dims[layer+1], act=lambda x : x,
@@ -314,19 +323,19 @@ class SampleAndAggregate(GeneralizedModel):
                             name=name, concat=concat, model_size=model_size)
                 aggregators.append(aggregator)
             else:
-                aggregator = aggregators[layer]
+                aggregator = aggregators[layer] #line 307-320: get an aggregator for the current layer
             # hidden representation at current layer for all support nodes that are various hops away
             next_hidden = []
             # as layer increases, the number of support nodes needed decreases
-            for hop in range(len(num_samples) - layer):
+            for hop in range(len(num_samples) - layer): # hop ranges from 0->2 0->1 0->0
                 dim_mult = 2 if concat and (layer != 0) else 1
-                neigh_dims = [batch_size * support_sizes[hop], 
+                neigh_dims = [batch_size * support_sizes[hop], # example: support_sizes = [1,5,25,125] 
                               num_samples[len(num_samples) - hop - 1], 
                               dim_mult*dims[layer]]
                 h = aggregator((hidden[hop],
-                                tf.reshape(hidden[hop + 1], neigh_dims)))
+                                tf.reshape(hidden[hop + 1], neigh_dims))) 
                 next_hidden.append(h)
-            hidden = next_hidden
+            hidden = next_hidden #[b,b*5,b*25,b*125] -> [b,b*5,b*25] -> [b,b*5] -> [b]
         return hidden[0], aggregators
 
     def _build(self):

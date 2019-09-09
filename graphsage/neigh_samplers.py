@@ -21,7 +21,7 @@ class UniformNeighborSampler(Layer):
         super(UniformNeighborSampler, self).__init__(**kwargs)
         self.adj_info = adj_info
 
-    def _call(self, inputs):
+    def _call(self, inputs): # p_,q_ = (p,q)
         ids, num_samples = inputs
         adj_lists = tf.nn.embedding_lookup(self.adj_info, ids) 
         adj_lists = tf.transpose(tf.random_shuffle(tf.transpose(adj_lists)))

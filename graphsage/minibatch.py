@@ -39,7 +39,7 @@ class EdgeMinibatchIterator(object):
             edges = G.edges()
         else:
             edges = context_pairs
-        self.train_edges = self.edges = np.random.permutation(edges)
+        self.train_edges = self.edges = np.random.permutation(edges) # np.random.permutation
         if not n2v_retrain:
             self.train_edges = self._remove_isolated(self.train_edges)
             self.val_edges = [e for e in G.edges() if G[e[0]][e[1]]['train_removed']]
@@ -73,7 +73,7 @@ class EdgeMinibatchIterator(object):
         print("Unexpected missing:", missing)
         return new_edge_list
 
-    def construct_adj(self):
+    def construct_adj(self): # construct adj table of fixed size(cutting or padding) from nx.Graph
         adj = len(self.id2idx)*np.ones((len(self.id2idx)+1, self.max_degree))
         deg = np.zeros((len(self.id2idx),))
 

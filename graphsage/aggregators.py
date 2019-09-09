@@ -5,7 +5,8 @@ from .inits import glorot, zeros
 
 class MeanAggregator(Layer):
     """
-    Aggregates via mean followed by matmul and non-linearity.
+    Aggregates via mean followed by matmul and non-linearity. 
+    Hidden representations of central nodes and their neighborhoods are distinguished. 
     """
 
     def __init__(self, input_dim, output_dim, neigh_input_dim=None,
@@ -118,6 +119,7 @@ class GCNAggregator(Layer):
 
 class MaxPoolingAggregator(Layer):
     """ Aggregates via max-pooling over MLP functions.
+        Hidden representations of central nodes and their neighborhoods are distinguished.
     """
     def __init__(self, input_dim, output_dim, model_size="small", neigh_input_dim=None,
             dropout=0., bias=False, act=tf.nn.relu, name=None, concat=False, **kwargs):
@@ -169,8 +171,8 @@ class MaxPoolingAggregator(Layer):
         self_vecs, neigh_vecs = inputs
         neigh_h = neigh_vecs
 
-        dims = tf.shape(neigh_h)
-        batch_size = dims[0]
+        dims = tf.shape(neigh_h) # 'Dims' here seems a tensor.
+        batch_size = dims[0]     #  Why can the value of it be used directly? 
         num_neighbors = dims[1]
         # [nodes * sampled neighbors] x [hidden_dim]
         h_reshaped = tf.reshape(neigh_h, (batch_size * num_neighbors, self.neigh_input_dim))
@@ -178,7 +180,7 @@ class MaxPoolingAggregator(Layer):
         for l in self.mlp_layers:
             h_reshaped = l(h_reshaped)
         neigh_h = tf.reshape(h_reshaped, (batch_size, num_neighbors, self.hidden_dim))
-        neigh_h = tf.reduce_max(neigh_h, axis=1)
+        neigh_h = tf.reduce_max(neigh_h, axis=1) # tf.reduce_max(tensor, axis=)
         
         from_neighs = tf.matmul(neigh_h, self.vars['neigh_weights'])
         from_self = tf.matmul(self_vecs, self.vars["self_weights"])
