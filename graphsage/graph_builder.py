@@ -214,5 +214,6 @@ if  __name__ == "__main__":
         e1, e2 = e
         G.add_edge(e1+1,e2+1)
     G_2, id_map_2, pooling_map_2 = build_k_graph(G,2)
+    print(G_2.number_of_nodes(),G_2.number_of_edges())
     G_3, id_map_3, pooling_map_3 = build_k_graph(G,3)
     print(G_3.number_of_nodes(),G_3.number_of_edges())
