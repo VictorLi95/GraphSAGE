@@ -509,24 +509,3 @@ class Node2VecModel(GeneralizedModel):
         self.mrr = tf.reduce_mean(tf.div(1.0, tf.cast(self.ranks[:, -1] + 1, tf.float32)))
         tf.summary.scalar('mrr', self.mrr)
 
-class KSage(Model):
-
-    def __init__(self, features, adj, concat=True, **kwargs):
-        super(KSage, self).__init__(**kwargs)
-        if aggregator_type == "mean":
-            self.aggregator_cls = MeanAggregator
-        elif aggregator_type == "seq":
-            self.aggregator_cls = SeqAggregator
-        elif aggregator_type == "maxpool":
-            self.aggregator_cls = MaxPoolingAggregator
-        elif aggregator_type == "meanpool":
-            self.aggregator_cls = MeanPoolingAggregator
-        elif aggregator_type == "gcn":
-            self.aggregator_cls = GCNAggregator
-        else:
-            raise Exception("Unknown aggregator: ", self.aggregator_cls)
-
-        self.adj_info = adj
-        if features is None:
-            if identity_dim == 0:
-                raise Exception()

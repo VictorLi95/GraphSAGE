@@ -98,8 +98,19 @@ def make_ordered_tuple_of_3(x1,x2,x3):
         else:
             return (x3, x2, x1)
 
+#def construct_adj(G, id_map):
+   
+
 def build_k_graph(G, k):
-    if k == 2:
+    if k == 1:
+        id_map = dict()
+	cnt_ = 0
+        for n in G.nodes():
+            cnt_ += 1
+            id_map[n] = cnt_        
+        return G, id_map, None
+
+    elif k == 2:
         print('start building G_2...')
         G_2 = nx.Graph()
         id_map_2 = dict()
