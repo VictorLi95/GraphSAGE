@@ -57,11 +57,17 @@ def build_graph(graph_name,directed=False):
     node2id = int(s[1])
     G.add_edge(node1id,node2id)
   fr.close()
+   
+  max_degree = 0
+  for n in G.nodes():
+    max_degree = max(max_degree, len(list(G.neighbors(n))))
+  G.graph['max_degree'] = max_degree
 
   print('Graph building finished.')
   print('Graph name = '+graph_name+'.')
   print('Number of nodes = '+str(G.number_of_nodes())+'.')
   print('Number of edges = '+str(G.number_of_edges())+'.')
+  print('Max degree = '+str(max_degree)+'.')
   if directed:
     print('The graph is a directed graph.')
   else:
@@ -98,16 +104,28 @@ def make_ordered_tuple_of_3(x1,x2,x3):
         else:
             return (x3, x2, x1)
 
-#def construct_adj(G, id_map):
-   
+def construct_adj(G, id_map):
+    max_degree = G.graph['max_degree']
+    adj = len(G.nodes()) * np.ones((len(G.nodes())+1, max_degree)) 
+    deg = np.zeros((len(G.nodes()),))
+
+    for n in G.nodes():
+        neighbors = np.array([id_map[neighbor] for neighbor in G.neighbors(n)])       
+        deg[id_map[n]] = len(neighbors)
+        if len(neighbors) > max_degree:
+            neighbors = np.random.choice(neighbors, max_degree, replace=False)
+        elif len(neighbors) < max_degree:
+            neighbors = np.random.choice(neighbors, max_degree, replace=True)
+        adj[id_map[n], :] = neighbors
+    return adj, deg
 
 def build_k_graph(G, k):
     if k == 1:
         id_map = dict()
 	cnt_ = 0
         for n in G.nodes():
+            id_map[n] = cnt_    
             cnt_ += 1
-            id_map[n] = cnt_        
         return G, id_map, None
 
     elif k == 2:
@@ -119,8 +137,8 @@ def build_k_graph(G, k):
         print('start adding nodes of G_2...')
         for e in G.edges():
             G_2.add_node(e)
-            cnt_ += 1
             id_map_2[e] = cnt_
+            cnt_ += 1
         # add edges of G_2
         print('start adding edges of G_2...')
         for n in G_2.nodes():
@@ -139,6 +157,11 @@ def build_k_graph(G, k):
             pooling_map_2[id_map_2[n]][0] = n1
             pooling_map_2[id_map_2[n]][1] = n2
 
+        max_degree = 0
+        for n in G.nodes():
+            max_degree = max(max_degree, len(list(G.neighbors(n))))
+        G_2.graph['max_degree'] = max_degree
+        print('G_2 building finished.')
         return G_2, id_map_2, pooling_map_2
 
     elif k == 3:
@@ -156,8 +179,8 @@ def build_k_graph(G, k):
                     t = make_ordered_tuple_of_3(n1, n2, i)
                     G_3.add_node(t)
                     if id_map_3.get(t) == None:
-                        cnt_ += 1
                         id_map_3[t] = cnt_
+                        cnt_ += 1
             for i in G.neighbors(n2):
                 if not i == n1:
                     t = make_ordered_tuple_of_3(n1, n2, i)
@@ -212,18 +235,16 @@ def build_k_graph(G, k):
                 pooling_map_3[id_map_3[n]][t] = id_map_2[(n1,n3)]
                 t == 1
         
+        max_degree = 0
+        for n in G.nodes():
+            max_degree = max(max_degree, len(list(G.neighbors(n))))
+        G_3.graph['max_degree'] = max_degree
         print('G_3 building finished.')
         return G_3, id_map_3, pooling_map_3
 
 if  __name__ == "__main__":
     #G__ = nx.karate_club_graph()
-    G__ = build_graph('cora')
-    G = nx.Graph()
-    for n in G__.nodes():
-        G.add_node(n+1)
-    for e in G__.edges():
-        e1, e2 = e
-        G.add_edge(e1+1,e2+1)
+    G = build_graph('cora')
     G_2, id_map_2, pooling_map_2 = build_k_graph(G,2)
     print(G_2.number_of_nodes(),G_2.number_of_edges())
     G_3, id_map_3, pooling_map_3 = build_k_graph(G,3)
