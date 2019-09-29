@@ -228,8 +228,9 @@ class SampleAndAggregate(GeneralizedModel):
             raise Exception("Unknown aggregator: ", self.aggregator_cls)
 
         # get info from placeholders...
-        self.inputs1 = placeholders["batch1"]
-        self.inputs2 = placeholders["batch2"]
+        if not placeholders is None:
+            self.inputs1 = placeholders["batch1"]
+            self.inputs2 = placeholders["batch2"]
         self.model_size = model_size
         self.adj_info = adj
         if identity_dim > 0:
@@ -275,7 +276,7 @@ class SampleAndAggregate(GeneralizedModel):
         support_sizes = [support_size] # [ 1 ]
         for k in range(len(layer_infos)):
             t = len(layer_infos) - k - 1 # k 0,1,2 -> t 2,1,0
-            support_size *= layer_infos[t].num_samples # 1->5->25->125
+            support_size *= fanouts[k] # 1->5->25->125
             sampler = layer_infos[t].neigh_sampler
             node = sampler((samples[k], layer_infos[t].num_samples))
             samples.append(tf.reshape(node, [support_size * batch_size,])) # example: samples [shape (batch_size) tensor, shape (batch_size*5) tensor, shape (batch_size*5*5) tensor, ... ]
@@ -333,7 +334,7 @@ class SampleAndAggregate(GeneralizedModel):
                               num_samples[len(num_samples) - hop - 1], 
                               dim_mult*dims[layer]]
                 h = aggregator((hidden[hop],
-                                tf.reshape(hidden[hop + 1], neigh_dims))) 
+                                tf.reshape(hidden[hop + 1], neigh_dims)))
                 next_hidden.append(h)
             hidden = next_hidden #[b,b*5,b*25,b*125] -> [b,b*5,b*25] -> [b,b*5] -> [b]
         return hidden[0], aggregators

@@ -353,9 +353,9 @@ class TwoMaxLayerPoolingAggregator(Layer):
         
         if not self.concat:
             output = tf.add_n([from_self, from_neighs])
-        else:
+        else:       
             output = tf.concat([from_self, from_neighs], axis=1)
-
+            
         # bias
         if self.bias:
             output += self.vars['bias']

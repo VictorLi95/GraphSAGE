@@ -122,7 +122,7 @@ def construct_adj(G, id_map):
 def build_k_graph(G, k):
     if k == 1:
         id_map = dict()
-	cnt_ = 0
+        cnt_ = 0
         for n in G.nodes():
             id_map[n] = cnt_    
             cnt_ += 1
