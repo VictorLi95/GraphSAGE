@@ -6,7 +6,7 @@ def build_graph(graph_name,directed=False):
   #build graph from file 'graph_data/xxx_edge_list.txt' & 'graph_data/xxx_label.txt'
   #return G (default = None)
   
-  if not os.path.exists('graph_data/'+graph_name + '/edge_list.txt'):
+  if not os.path.exists('graphsage/graph_data/'+graph_name + '/edge_list.txt'):
     print('File graph_data/'+graph_name+'/edge_list.txt does not exist. Graph building failed.')
     return None
   
@@ -16,8 +16,8 @@ def build_graph(graph_name,directed=False):
     G = nx.Graph()
   
   label_set = set()
-  if os.path.exists('graph_data/'+graph_name+'/label.txt'):
-    fr = open('graph_data/'+graph_name + '/label.txt')
+  if os.path.exists('graphsage/graph_data/'+graph_name+'/label.txt'):
+    fr = open('graphsage/graph_data/'+graph_name + '/label.txt')
     while True:
       s = fr.readline().strip()
       if not s:
@@ -31,8 +31,8 @@ def build_graph(graph_name,directed=False):
   G.graph['label_set'] = label_set
   
   features_dim = 0
-  if os.path.exists('graph_data/'+graph_name+'/features.txt'):
-    fr = open('graph_data/'+graph_name+'/features.txt')
+  if os.path.exists('graphsage/graph_data/'+graph_name+'/features.txt'):
+    fr = open('graphsage/graph_data/'+graph_name+'/features.txt')
     while True:
       s = fr.readline().strip()
       if not s:
@@ -47,7 +47,7 @@ def build_graph(graph_name,directed=False):
       G.add_node(nodeid, features=features[:])
   G.graph['features_dim'] = features_dim
 
-  fr = open('graph_data/'+graph_name+'/edge_list.txt')
+  fr = open('graphsage/graph_data/'+graph_name+'/edge_list.txt')
   while True:
     s = fr.readline().strip()
     if not s:
@@ -106,13 +106,16 @@ def make_ordered_tuple_of_3(x1,x2,x3):
 
 def construct_adj(G, id_map):
     max_degree = G.graph['max_degree']
-    adj = len(G.nodes()) * np.ones((len(G.nodes())+1, max_degree)) 
-    deg = np.zeros((len(G.nodes()),))
+    num_of_nodes = G.number_of_nodes()
+    adj = len(G.nodes()) * np.ones((len(G.nodes())+1, max_degree),dtype=np.int32) 
+    deg = np.zeros((len(G.nodes()),),dtype=np.int32)
 
     for n in G.nodes():
-        neighbors = np.array([id_map[neighbor] for neighbor in G.neighbors(n)])       
+        neighbors = np.array([id_map[neighbor] for neighbor in G.neighbors(n)],dtype=np.int32)       
         deg[id_map[n]] = len(neighbors)
-        if len(neighbors) > max_degree:
+        if len(neighbors) == 0:
+            neighbors = np.array([num_of_nodes]*max_degree,dtype=np.int32)
+        elif len(neighbors) > max_degree:
             neighbors = np.random.choice(neighbors, max_degree, replace=False)
         elif len(neighbors) < max_degree:
             neighbors = np.random.choice(neighbors, max_degree, replace=True)
@@ -151,7 +154,7 @@ def build_k_graph(G, k):
                     G_2.add_edge( n, make_ordered_tuple_of_2(i,n2) )
         # get pooling map from nodes of G_2 to nodes of G
         print('start calculating pooling map from nodes of G_2 to nodes of G...')
-        pooling_map_2 = np.zeros((G_2.number_of_nodes()+1, 2))
+        pooling_map_2 = np.zeros((G_2.number_of_nodes()+1, 2),dtype=np.int32)
         for n in G_2.nodes():
             n1, n2 = n
             pooling_map_2[id_map_2[n]][0] = n1
@@ -221,7 +224,7 @@ def build_k_graph(G, k):
                         G_3.add_edge(n, make_ordered_tuple_of_3(n1, n3, i_))
          # get pooling map from nodes of G_3 to nodes of G_2
         print('start calculating pooling map from nodes of G_3 to nodes of G_2...')
-        pooling_map_3 = np.zeros((G_3.number_of_nodes()+1, 3))
+        pooling_map_3 = np.zeros((G_3.number_of_nodes()+1, 3),dtype=np.int32)
         for n in G_3.nodes():
             n1, n2, n3 = n
             t = 0

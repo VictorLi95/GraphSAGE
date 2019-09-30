@@ -16,6 +16,7 @@ class ShallowEncoder(Layer):
     def __init__(self, node_nums, identity_dim, features, output_dim, **kwargs):
         assert identity_dim > 0 or not features is None, 'Must use id-based embeddings or feature-based embeddings or both.'
         super(ShallowEncoder, self).__init__(**kwargs)
+        self.output_dim = output_dim
         if identity_dim > 0:
             with tf.variable_scope(self.name):
                 self.id_embeddings = tf.get_variable(name='id_embeddings',shape=[node_nums, identity_dim])
@@ -38,12 +39,12 @@ class ShallowEncoder(Layer):
 
 class SageEncoder(Layer):
 
-    def __init__(self, input_encoder, fanouts, adj, dim=10, aggregator_type='mean', concat=False, **kwargs):
+    def __init__(self, input_encoder, fanouts, adj, aggregator_type='mean', concat=False, **kwargs):
         assert aggregator_type in ['mean','seq','maxpool','meanpool','gcn'], 'Unknown aggregator_type: '+str(aggregator_type)+'.'
         super(SageEncoder, self).__init__(**kwargs)
         self.input_encoder = input_encoder
         self.fanouts = fanouts
-        self.dim = dim
+        self.output_dim = input_encoder.output_dim
         if aggregator_type == "mean":
             self.aggregator_cls = MeanAggregator
         elif aggregator_type == "seq":
@@ -54,8 +55,8 @@ class SageEncoder(Layer):
             self.aggregator_cls = MeanPoolingAggregator
         elif aggregator_type == "gcn":
             self.aggregator_cls = GCNAggregator
-        self.aggregators = [self.aggregator_cls(input_dim=self.dim, output_dim=self.dim,concat=concat) for i in range(len(fanouts)-1), 
-                            self.aggregator_cls(input_dim=self.dim, output_dim=self.dim,concat=concat,act=lambda x : x)]
+        self.aggregators = [self.aggregator_cls(input_dim=self.output_dim, output_dim=self.output_dim,concat=concat) for i in range(len(fanouts)-1), 
+                            self.aggregator_cls(input_dim=self.output_dim, output_dim=self.output_dim,concat=concat,act=lambda x : x)]
         with tf.variable_scope(self.name):
             self.adj = tf.get_variable(name='adj',initializer=tf.constant(adj,dtype=tf.int32),trainable=False)
         self.neigh_sampler = UniformNeighborSampler(self.adj)
@@ -80,11 +81,11 @@ class SageEncoder(Layer):
             aggregator = self.aggregators[layer]
             next_hidden = []
             for hop in range(len(self.fanouts) - layer):
-                neigh_shape = [-1, self.fanouts[hop], self.dim]
+                neigh_shape = [-1, self.fanouts[hop], self.output_dim]
                 h = aggregator((hidden[hop], tf.reshape(hidden[hop + 1], neigh_shape)))
                 next_hidden.append(h)
             hidden = next_hidden
-        output_shape = inputs_shape.concatenate(self.dim)
+        output_shape = inputs_shape.concatenate(self.output_dim)
         output_shape = [d if d is not None else -1 for d in output_shape.as_list()]
         return tf.reshape(hidden[0],output_shape)
 
@@ -95,6 +96,7 @@ class PoolingLayer(Layer):
         self.input_encoder = input_encoder
         self.pooling_type = pooling_type
         self.pooling_map = pooling_map
+        self.output_dim = input_encoder.output_dim
 
     def __call__(self, inputs):
         inputs_ = self.input_encoder(tf.nn.embedding_lookup(self.pooling_map, inputs))
@@ -105,7 +107,7 @@ class PoolingLayer(Layer):
         return outputs
 
 class KSage(GeneralizedModel):
-    def __init__(self, graph_name='cora', k=2, identity_dim=0, features=None, fanouts=[5], aggregator_type='mean', pooling_type='max', concat=True, **kwargs):
+    def __init__(self, graph_name='cora', k=2, identity_dim=0, features=None, output_dim=20, fanouts=[5], aggregator_type='mean', pooling_type='max', concat=True, **kwargs):
             
         assert isinstance(k,int) and k>=1 and k<=3, 'Invalid value of k: '+str(k)+'.'
         assert aggregator_type in ['mean','seq','maxpool','meanpool','gcn'], 'Unknown aggregator_type: '+str(aggregator_type)+'.'
@@ -115,6 +117,7 @@ class KSage(GeneralizedModel):
         self.k = k
         self.identity_dim = identity_dim
         self.features = features
+        self.output_dim = output_dim
         self.fanouts = fanouts
         if aggregator_type == "mean":
             self.aggregator_cls = MeanAggregator
@@ -144,15 +147,17 @@ class KSage(GeneralizedModel):
             self.adj.append(adj_)
             self.deg.append(deg_)
 
-        self.encoders = [None, ShallowEncoder(adj[1].shape[0], identity_dim, features)]
+        self.encoders = [None, ShallowEncoder(self.adj[1].shape[0], identity_dim, features, output_dim=self.output_dim)]
         self.pooling_layers = [None, None]
         for k_ in range(2,self.k+1):
-            self.pooling_layers.append(Pooling_Layer(input_encoder=self.encoders[-1],pooling_map=self.pooling_map[k_],pooling_type=self.pooling_type))
-            self.encoders.append(SageEncoder(input_encoder=self.pooling_layers[-1],fanouts=self.fanouts,dim=))
-        #self. = [None, ShallowEncoder(adj[1].shape[0], identity_dim, features)]
-        #self.inputs.extend([SageEncoder(k=i) for i in range(2,self.k+1)])
-        #self.outputs = {}
+            self.pooling_layers.append(PoolingLayer(input_encoder=self.encoders[-1],pooling_map=self.pooling_map[k_],pooling_type=self.pooling_type))
+            self.encoders.append(SageEncoder(input_encoder=self.pooling_layers[-1],fanouts=self.fanouts,adj=self.adj[k_],aggregator_type='mean',concat=False))
         
+    def get_embeddings(self, inputs, k):
+        assert isinstance(k,int) and k>=1 and k<=self.k, 'Invalid value of k: '+str(k)+'.'
+        return self.encoders[k](inputs)
+    
+    def __call__(self, inputs):
         
 
 
@@ -160,9 +165,10 @@ if __name__ == "__main__":
     a = ShallowEncoder(node_nums=5, identity_dim=16, features=None, output_dim=5)
     print a.name
     adj_ = np.array([[0,1,2,3,4] for i in range(5)])
-    b = SageEncoder(input_encoder=a, fanouts=[5,5], dim=5, adj=adj_)
+    b = SageEncoder(input_encoder=a, fanouts=[5,5], adj=adj_)
     c = PoolingLayer(input_encoder=b, pooling_type='max',pooling_map=np.array([[1,2],[1,2],[3,4],[0,4]]))
     inputs_ = tf.placeholder(tf.int32,[None])
+    d = KSage(graph_name='cora',k=3,identity_dim=5,features=None,output_dim=5,fanouts=[5,5])
     with tf.Session() as sess:
         sess.run(tf.global_variables_initializer())
         #sess.run(tf.initialize_all_variables())
@@ -170,4 +176,4 @@ if __name__ == "__main__":
         #print sess.run(b.sample([1,2],[5,5]))
         print sess.run(b(inputs_),feed_dict={inputs_:[2,3]})
         print sess.run(c(inputs_),feed_dict={inputs_:[0,1]})
-    
+        print sess.run(d(inputs_,1),feed_dict={inputs_:[0,1,2,3,4,5,6,7]})
