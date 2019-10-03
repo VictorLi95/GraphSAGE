@@ -45,6 +45,7 @@ def build_graph(graph_name,directed=False):
       for j in range(features_dim):
         features.append(float(s[1+j]))
       G.add_node(nodeid, features=features[:])
+    fr.close()
   G.graph['features_dim'] = features_dim
 
   fr = open('graphsage/graph_data/'+graph_name+'/edge_list.txt')
@@ -108,7 +109,7 @@ def construct_adj(G, id_map):
     max_degree = G.graph['max_degree']
     num_of_nodes = G.number_of_nodes()
     adj = len(G.nodes()) * np.ones((len(G.nodes())+1, max_degree),dtype=np.int32) 
-    deg = np.zeros((len(G.nodes()),),dtype=np.int32)
+    deg = np.zeros((len(G.nodes())+1,),dtype=np.int32)
 
     for n in G.nodes():
         neighbors = np.array([id_map[neighbor] for neighbor in G.neighbors(n)],dtype=np.int32)       
@@ -125,23 +126,23 @@ def construct_adj(G, id_map):
 def build_k_graph(G, k):
     if k == 1:
         id_map = dict()
-        cnt_ = 0
+        cnt = 0
         for n in G.nodes():
-            id_map[n] = cnt_    
-            cnt_ += 1
-        return G, id_map, None
-
+            cnt += 1
+            id_map[n] = cnt    
+        return G, id_map, None, None
     elif k == 2:
         print('start building G_2...')
+        G_1, id_map_1, _, _ = build_k_graph(G, 1)
         G_2 = nx.Graph()
         id_map_2 = dict()
-        cnt_ = 0
+        cnt = 0
         # add nodes of G_2
         print('start adding nodes of G_2...')
-        for e in G.edges():
+        for e in G_1.edges():
             G_2.add_node(e)
-            id_map_2[e] = cnt_
-            cnt_ += 1
+            cnt += 1
+            id_map_2[e] = cnt
         # add edges of G_2
         print('start adding edges of G_2...')
         for n in G_2.nodes():
@@ -152,27 +153,41 @@ def build_k_graph(G, k):
             for i in G.neighbors(n2):
                 if not i == n1:
                     G_2.add_edge( n, make_ordered_tuple_of_2(i,n2) )
-        # get pooling map from nodes of G_2 to nodes of G
+        # get pooling map from nodes of G_2 to nodes of G_1
         print('start calculating pooling map from nodes of G_2 to nodes of G...')
         pooling_map_2 = np.zeros((G_2.number_of_nodes()+1, 2),dtype=np.int32)
         for n in G_2.nodes():
             n1, n2 = n
-            pooling_map_2[id_map_2[n]][0] = n1
-            pooling_map_2[id_map_2[n]][1] = n2
-
+            pooling_map_2[id_map_2[n]][0] = id_map_1[n1]
+            pooling_map_2[id_map_2[n]][1] = id_map_1[n2]
+        #get reverse pooling map from nodes of G_1 to nodes of G_2
+        print('start calculating reverse pooling map from nodes of G_1 to nodes of G_2')
+        reverse_pooling_map_2 = np.zeros((G.number_of_nodes()+1,G_1.graph['max_degree']),dtype=np.int32)
+        a = np.zeros(G_1.number_of_nodes()+1,dtype=np.int32)
+        for n in G_2.nodes():
+            n1, n2 = n
+            n1_ = id_map_1[n1]
+            n2_ = id_map_1[n2]
+            n_ = id_map_2[n]
+            reverse_pooling_map_2[n1_][a[n1_]] = n_
+            a[n1_] += 1
+            reverse_pooling_map_2[n2_][a[n2_]] = n_
+            a[n2_] += 1
         max_degree = 0
         for n in G.nodes():
             max_degree = max(max_degree, len(list(G.neighbors(n))))
         G_2.graph['max_degree'] = max_degree
+        G_2.graph['max_rev_degree'] = G_1.graph['max_degree']
         print('G_2 building finished.')
-        return G_2, id_map_2, pooling_map_2
-
+        return G_2, id_map_2, pooling_map_2, reverse_pooling_map_2
     elif k == 3:
-        G_2, id_map_2, pooling_map_2 = build_k_graph(G , 2)
         print('start building G_3...')
+        print('first build G_1 and G_2...')
+        G_1, id_map_1, _, _ = build_k_graph(G, 1)
+        G_2, id_map_2, pooling_map_2, reverse_pooling_map_2 = build_k_graph(G , 2)
         G_3 = nx.Graph()
         id_map_3 = dict()
-        cnt_ = 0
+        cnt = 0
         # add nodes of G_3
         print('start adding nodes of G_3...')
         for n in G_2.nodes():
@@ -182,15 +197,15 @@ def build_k_graph(G, k):
                     t = make_ordered_tuple_of_3(n1, n2, i)
                     G_3.add_node(t)
                     if id_map_3.get(t) == None:
-                        id_map_3[t] = cnt_
-                        cnt_ += 1
+                        cnt += 1
+                        id_map_3[t] = cnt
             for i in G.neighbors(n2):
                 if not i == n1:
                     t = make_ordered_tuple_of_3(n1, n2, i)
                     G_3.add_node(t)
                     if id_map_3.get(t) == None:
-                        cnt_ += 1
-                        id_map_3[t] = cnt_
+                        cnt += 1
+                        id_map_3[t] = cnt
         # add edges of G_3
         print('start adding edges of G_3...')
         for n in G_3.nodes():
@@ -213,7 +228,7 @@ def build_k_graph(G, k):
                         i_ = i1
                     if not i_ == n1:
                         G_3.add_edge(n, make_ordered_tuple_of_3(n2, n3, i_))
-            if G_3.has_node((n1,n3)):
+            if G_2.has_node((n1,n3)):
                 for i in G_2.neighbors((n1,n3)):
                     i1, i2 = i
                     if i1 == n1 or i1 == n3:
@@ -222,7 +237,7 @@ def build_k_graph(G, k):
                         i_ = i1
                     if not i_ == n2:
                         G_3.add_edge(n, make_ordered_tuple_of_3(n1, n3, i_))
-         # get pooling map from nodes of G_3 to nodes of G_2
+        # get pooling map from nodes of G_3 to nodes of G_2
         print('start calculating pooling map from nodes of G_3 to nodes of G_2...')
         pooling_map_3 = np.zeros((G_3.number_of_nodes()+1, 3),dtype=np.int32)
         for n in G_3.nodes():
@@ -236,19 +251,44 @@ def build_k_graph(G, k):
                 t += 1
             if G_2.has_node((n1, n3)):
                 pooling_map_3[id_map_3[n]][t] = id_map_2[(n1,n3)]
-                t == 1
-        
+                t += 1
+        # get reverse pooling map from nodes of G_1 to nodes of G_2
+        print('start calculating reverse pooling map from nodes of G_1 to nodes of G_2')
+        a = np.zeros(G_1.number_of_nodes()+1,dtype=np.int32)
+        for n in G_3.nodes():
+            n1, n2, n3 = n
+            a[id_map_1[n1]] += 1
+            a[id_map_1[n2]] += 1
+            a[id_map_1[n3]] += 1
+        max_rev_degree = max(a)
+        a = np.zeros(G_1.number_of_nodes()+1,dtype=np.int32)
+        reverse_pooling_map_3 = np.zeros((G_1.number_of_nodes()+1,max_rev_degree),dtype=np.int32)
+        for n in G_3.nodes():
+            n1, n2, n3 = n
+            n1_ = id_map_1[n1]
+            n2_ = id_map_1[n2]
+            n3_ = id_map_1[n3]
+            n_ = id_map_3[n]
+            reverse_pooling_map_3[n1_][a[n1_]] = n_
+            a[n1_] += 1
+            reverse_pooling_map_3[n2_][a[n2_]] = n_
+            a[n2_] += 1
+            reverse_pooling_map_3[n3_][a[n3_]] = n_
+            a[n3_] += 1
+
         max_degree = 0
-        for n in G.nodes():
-            max_degree = max(max_degree, len(list(G.neighbors(n))))
+        for n in G_3.nodes():
+            max_degree = max(max_degree, len(list(G_3.neighbors(n))))
         G_3.graph['max_degree'] = max_degree
+        G_3.graph['max_rev_degree'] = max_rev_degree
         print('G_3 building finished.')
-        return G_3, id_map_3, pooling_map_3
+        return G_3, id_map_3, pooling_map_3, reverse_pooling_map_3
 
 if  __name__ == "__main__":
     #G__ = nx.karate_club_graph()
     G = build_graph('cora')
-    G_2, id_map_2, pooling_map_2 = build_k_graph(G,2)
-    print(G_2.number_of_nodes(),G_2.number_of_edges())
-    G_3, id_map_3, pooling_map_3 = build_k_graph(G,3)
-    print(G_3.number_of_nodes(),G_3.number_of_edges())
+    print(G.graph['max_degree'])
+    G_2, id_map_2, pooling_map_2, reverse_pooling_map_2 = build_k_graph(G,2)
+    print(G_2.number_of_nodes(),G_2.number_of_edges(),pooling_map_2.shape[1],reverse_pooling_map_2.shape[1])
+    G_3, id_map_3, pooling_map_3, reverse_pooling_map_3 = build_k_graph(G,3)
+    print(G_3.number_of_nodes(),G_3.number_of_edges(),pooling_map_3.shape[1],reverse_pooling_map_3.shape[1])
