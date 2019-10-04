@@ -7,11 +7,6 @@ from neigh_samplers import *
 from models import *
 from layers import *
 
-flags = tf.app.flags
-FLAGS = flags.FLAGS
-
-flags.DEFINE_float('weight_decay', 0.0, 'weight for l2 loss on embedding matrix.')
-
 class ShallowEncoder(Layer):
     def __init__(self, node_nums, identity_dim, features, output_dim, **kwargs):
         assert identity_dim > 0 or not features is None, 'Must use id-based embeddings or feature-based embeddings or both.'
@@ -125,7 +120,7 @@ class KSage(GeneralizedModel):
         assert len(intra_k_pooling_num)==k and intra_k_pooling_num[0] == 1, 'Invalid value of intra_k_pooling_num: '+str(intra_k_pooling_num)+'.'
         assert intra_k_pooling_type in ['mean','max'], 'Unknown intra_k_pooling_type: '+str(intra_k_pooling_type)+'.'
         assert identity_dim > 0 or not features is None, 'Must use id-based embeddings or feature-based embeddings or both.'
-        
+
         super(KSage, self).__init__(**kwargs)
         self.graph_name = graph_name
         self.k = k
@@ -174,12 +169,8 @@ class KSage(GeneralizedModel):
 
         self.inter_k_pooling_type = inter_k_pooling_type
         if self.inter_k_pooling_type == 'concat_and_dense':
-            self.inter_dense = Dense(input_dim = self.output_dim * self.k, output_dim=self.output_dim)
+            self.inter_dense = Dense(input_dim = self.output_dim * self.k, output_dim=self.output_dim,act=lambda x:x)
 
-    def get_embeddings(self, inputs, k):
-        assert isinstance(k,int) and k>=1 and k<=self.k, 'Invalid value of k: '+str(k)+'.'
-        return self.encoders[k](inputs)
-    
     def __call__(self, inputs):
         if self.inter_k_pooling_type == 'concat_and_dense':
             inputs_ = [self.encoders[1](inputs)]
@@ -197,9 +188,9 @@ class KSage(GeneralizedModel):
             else:
                 return tf.reduce_max(inputs__,axis=1)
 
-if __name__ == "__main__":
+#if __name__ == "__main__":
+    '''
     a = ShallowEncoder(node_nums=5, identity_dim=16, features=None, output_dim=5)
-    print a.name
     adj_ = np.array([[0,1,2,3,4] for i in range(5)])
     b = SageEncoder(input_encoder=a, fanouts=[5,5], adj=adj_)
     c = PoolingLayer(input_encoder=b, pooling_type='max',pooling_map=np.array([[1,2],[1,2],[3,4],[0,4]]))
@@ -207,12 +198,6 @@ if __name__ == "__main__":
     d = KSage(graph_name='cora',k=3,identity_dim=5,features=None,output_dim=5,fanouts=[5,5],intra_k_pooling_num=[1,5,5])
     with tf.Session() as sess:
         sess.run(tf.global_variables_initializer())
-        '''
-        print sess.run(a(inputs_),feed_dict={inputs_:[1,2]})
-        print sess.run(b(inputs_),feed_dict={inputs_:[2,3]})
-        print sess.run(c(inputs_),feed_dict={inputs_:[0,1]})
-        print sess.run(d.get_embeddings(inputs_, 3),feed_dict={inputs_:[0,1,2,3,4,5,6,7]})
-        print sess.run(d.get_embeddings(inputs_, 2),feed_dict={inputs_:[0,1,2,3,4,5,6,7]})
-        print sess.run(d.get_embeddings(inputs_, 1),feed_dict={inputs_:[0,1,2,3,4,5,6,7]})
-        '''
-        print sess.run(d(inputs_),feed_dict={inputs_:[1,2,3,4,5,6,7,8]})
+        print sess.run(d(inputs_),feed_dict={inputs_:[76,250,294,83]})
+    '''
+    
