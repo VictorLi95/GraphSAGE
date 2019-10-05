@@ -20,8 +20,8 @@ class ShallowEncoder(Layer):
         if features is None:
             self.outputs_ = self.id_embeddings
         else:
-            self.features = tf.get_variable(name='features',initializer=tf.constant(features))
-            if not self.embeddings is None:
+            self.features = tf.get_variable(name='features',initializer=tf.constant(features,dtype=tf.float32),trainable=False)
+            if not self.id_embeddings is None:
                 self.outputs_ = tf.concat([self.id_embeddings, self.features], axis=1)
             else:
                 self.outputs_ = self.features
@@ -108,7 +108,7 @@ class PoolingLayer(Layer):
         return outputs
 
 class KSage(GeneralizedModel):
-    def __init__(self, graph_name='cora', k=2, identity_dim=0, features=None, output_dim=20, 
+    def __init__(self, G, k=2, identity_dim=0, use_features=False, output_dim=20, 
                  fanouts=[5], ksage_aggregator_type='mean', ksage_pooling_type='max', 
                  inter_k_pooling_type='concat_and_dense', intra_k_pooling_num=[1], intra_k_pooling_type='mean',
                  **kwargs):
@@ -119,13 +119,12 @@ class KSage(GeneralizedModel):
         assert inter_k_pooling_type in ['concat_and_dense','mean','max'], 'Unknown inter_k_pooling_type: '+str(inter_k_pooling_type)+'.'
         assert len(intra_k_pooling_num)==k and intra_k_pooling_num[0] == 1, 'Invalid value of intra_k_pooling_num: '+str(intra_k_pooling_num)+'.'
         assert intra_k_pooling_type in ['mean','max'], 'Unknown intra_k_pooling_type: '+str(intra_k_pooling_type)+'.'
-        assert identity_dim > 0 or not features is None, 'Must use id-based embeddings or feature-based embeddings or both.'
+        assert identity_dim > 0 or use_features, 'Must use id-based embeddings or feature-based embeddings or both.'
 
         super(KSage, self).__init__(**kwargs)
-        self.graph_name = graph_name
         self.k = k
         self.identity_dim = identity_dim
-        self.features = features
+        self.use_features = use_features
         self.output_dim = output_dim
         self.fanouts = fanouts
         if ksage_aggregator_type == "mean":
@@ -140,7 +139,6 @@ class KSage(GeneralizedModel):
             self.aggregator_cls = GCNAggregator
         self.ksage_pooling_type = ksage_pooling_type
 
-        _G = build_graph(graph_name)
         self.G = [None]
         self.id_map = [None]
         self.pooling_map = [None]
@@ -149,8 +147,10 @@ class KSage(GeneralizedModel):
         self.deg = [None]
         
         for k_ in range(self.k):
-            G_, id_map_, pooling_map_, reverse_pooling_map_ = build_k_graph(_G, k_ + 1)
+            G_, id_map_, pooling_map_, reverse_pooling_map_ = build_k_graph(G, k_ + 1)
             adj_, deg_ = construct_adj(G_, id_map_)
+            if not pooling_map_ is None:
+                print(pooling_map_.shape)
             self.G.append(G_)
             self.id_map.append(id_map_)
             self.pooling_map.append(pooling_map_)
@@ -158,6 +158,12 @@ class KSage(GeneralizedModel):
             self.adj.append(adj_)
             self.deg.append(deg_)
             
+        if self.use_features:
+            id_map_ = self.id_map[1]
+            features = np.zeros((G.number_of_nodes()+1,G.graph['features_dim']))
+            for n in G.nodes():
+                features[id_map_[n]] = G.node[n]['features']
+
         self.encoders = [None, ShallowEncoder(self.adj[1].shape[0], identity_dim, features, output_dim=self.output_dim)]
         self.pooling_layers = [None, None]
         self.intra_k_pooling_layers = [None, None]
