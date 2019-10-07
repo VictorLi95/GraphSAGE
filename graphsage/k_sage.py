@@ -1,7 +1,6 @@
 import tensorflow as tf
 import numpy as np
 from graph_builder import *
-#from .aggregators import MeanAggregator, MaxPoolingAggregator, MeanPoolingAggregator, SeqAggregator, GCNAggregator
 from aggregators import *
 from neigh_samplers import *
 from models import *
@@ -50,8 +49,7 @@ class SageEncoder(Layer):
             self.aggregator_cls = MeanPoolingAggregator
         elif aggregator_type == "gcn":
             self.aggregator_cls = GCNAggregator
-        self.aggregators = [self.aggregator_cls(input_dim=self.output_dim, output_dim=self.output_dim,concat=concat) for i in range(len(fanouts)-1), 
-                            self.aggregator_cls(input_dim=self.output_dim, output_dim=self.output_dim,concat=concat,act=lambda x : x)]
+        self.aggregators = [self.aggregator_cls(input_dim=self.output_dim, output_dim=self.output_dim,concat=concat) for i in range(len(fanouts)-1),self.aggregator_cls(input_dim=self.output_dim, output_dim=self.output_dim,concat=concat,act=lambda x : x)]
         with tf.variable_scope(self.name):
             self.adj = tf.get_variable(name='adj',initializer=tf.constant(adj,dtype=tf.int32),trainable=False)
         self.neigh_sampler = UniformNeighborSampler(self.adj)
@@ -146,17 +144,21 @@ class KSage(GeneralizedModel):
         self.adj = [None]
         self.deg = [None]
         
-        for k_ in range(self.k):
-            G_, id_map_, pooling_map_, reverse_pooling_map_ = build_k_graph(G, k_ + 1)
+        for k_ in range(1,self.k+1):
+            G_, id_map_, pooling_map_, reverse_pooling_map_ = build_k_graph(G, k_)
             adj_, deg_ = construct_adj(G_, id_map_)
-            if not pooling_map_ is None:
-                print(pooling_map_.shape)
-            self.G.append(G_)
-            self.id_map.append(id_map_)
-            self.pooling_map.append(pooling_map_)
-            self.reverse_pooling_map.append(reverse_pooling_map_)
-            self.adj.append(adj_)
-            self.deg.append(deg_)
+            self.G.append(G_.copy())
+            self.id_map.append(id_map_.copy())
+            if pooling_map_ is None:
+                self.pooling_map.append(None)
+            else:
+                self.pooling_map.append(pooling_map_.copy())
+            if reverse_pooling_map_ is None:
+                self.reverse_pooling_map.append(None)
+            else:
+                self.reverse_pooling_map.append(reverse_pooling_map_.copy())
+            self.adj.append(adj_.copy())
+            self.deg.append(deg_.copy())
             
         if self.use_features:
             id_map_ = self.id_map[1]
@@ -164,19 +166,19 @@ class KSage(GeneralizedModel):
             for n in G.nodes():
                 features[id_map_[n]] = G.node[n]['features']
 
-        self.encoders = [None, ShallowEncoder(self.adj[1].shape[0], identity_dim, features, output_dim=self.output_dim)]
+        self.initial_encoder = ShallowEncoder(self.adj[1].shape[0], identity_dim, features, output_dim=self.output_dim)
+        self.encoders = [None, SageEncoder(input_encoder=self.initial_encoder,fanouts=self.fanouts,adj=self.adj[1],aggregator_type='mean',concat=False)]
         self.pooling_layers = [None, None]
         self.intra_k_pooling_layers = [None, None]
         for k_ in range(2,self.k+1):
-            self.pooling_layers.append(PoolingLayer(input_encoder=self.encoders[-1],pooling_map=self.pooling_map[k_],pooling_type=self.ksage_pooling_type))
-            self.encoders.append(SageEncoder(input_encoder=self.pooling_layers[-1],fanouts=self.fanouts,adj=self.adj[k_],aggregator_type='mean',concat=False))
-            self.intra_k_pooling_layers.append(PoolingLayer(input_encoder=self.encoders[-1],pooling_map=self.reverse_pooling_map[-1],
-                                                       pooling_type=intra_k_pooling_type,sample_num=intra_k_pooling_num[k_-1]))
-
+            self.pooling_layers.append(PoolingLayer(input_encoder=self.encoders[k_-1],pooling_map=self.pooling_map[k_],pooling_type=self.ksage_pooling_type))
+            self.encoders.append(SageEncoder(input_encoder=self.pooling_layers[k_],fanouts=self.fanouts,adj=self.adj[k_],aggregator_type='mean',concat=False))
+            self.intra_k_pooling_layers.append(PoolingLayer(input_encoder=self.encoders[k_],pooling_map=self.reverse_pooling_map[k_],pooling_type=intra_k_pooling_type,sample_num=intra_k_pooling_num[k_-1]))
+        
         self.inter_k_pooling_type = inter_k_pooling_type
         if self.inter_k_pooling_type == 'concat_and_dense':
             self.inter_dense = Dense(input_dim = self.output_dim * self.k, output_dim=self.output_dim,act=lambda x:x)
-
+        
     def __call__(self, inputs):
         if self.inter_k_pooling_type == 'concat_and_dense':
             inputs_ = [self.encoders[1](inputs)]

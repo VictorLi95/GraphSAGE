@@ -108,7 +108,7 @@ def make_ordered_tuple_of_3(x1,x2,x3):
 def construct_adj(G, id_map):
     max_degree = G.graph['max_degree']
     num_of_nodes = G.number_of_nodes()
-    adj = len(G.nodes()) * np.ones((len(G.nodes())+1, max_degree),dtype=np.int32) 
+    adj = np.ones((len(G.nodes())+1, max_degree),dtype=np.int32) 
     deg = np.zeros((len(G.nodes())+1,),dtype=np.int32)
 
     for n in G.nodes():
