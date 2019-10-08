@@ -109,6 +109,7 @@ class KSage(GeneralizedModel):
     def __init__(self, G, k=2, identity_dim=0, use_features=False, output_dim=20, 
                  fanouts=[5], ksage_aggregator_type='mean', ksage_pooling_type='max', 
                  inter_k_pooling_type='concat_and_dense', intra_k_pooling_num=[1], intra_k_pooling_type='mean',
+                 concat=False,
                  **kwargs):
             
         assert isinstance(k,int) and k>=1 and k<=3, 'Invalid value of k: '+str(k)+'.'
@@ -125,17 +126,9 @@ class KSage(GeneralizedModel):
         self.use_features = use_features
         self.output_dim = output_dim
         self.fanouts = fanouts
-        if ksage_aggregator_type == "mean":
-            self.aggregator_cls = MeanAggregator
-        elif ksage_aggregator_type == "seq":
-            self.aggregator_cls = SeqAggregator
-        elif ksage_aggregator_type == "maxpool":
-            self.aggregator_cls = MaxPoolingAggregator
-        elif ksage_aggregator_type == "meanpool":
-            self.aggregator_cls = MeanPoolingAggregator
-        elif ksage_aggregator_type == "gcn":
-            self.aggregator_cls = GCNAggregator
+        self.ksage_aggregator_type = ksage_aggregator_type
         self.ksage_pooling_type = ksage_pooling_type
+        self.concat = concat
 
         self.G = [None]
         self.id_map = [None]
@@ -167,12 +160,12 @@ class KSage(GeneralizedModel):
                 features[id_map_[n]] = G.node[n]['features']
 
         self.initial_encoder = ShallowEncoder(self.adj[1].shape[0], identity_dim, features, output_dim=self.output_dim)
-        self.encoders = [None, SageEncoder(input_encoder=self.initial_encoder,fanouts=self.fanouts,adj=self.adj[1],aggregator_type='mean',concat=False)]
+        self.encoders = [None, SageEncoder(input_encoder=self.initial_encoder,fanouts=self.fanouts,adj=self.adj[1],aggregator_type=self.ksage_aggregator_type,concat=self.concat)]
         self.pooling_layers = [None, None]
         self.intra_k_pooling_layers = [None, None]
         for k_ in range(2,self.k+1):
             self.pooling_layers.append(PoolingLayer(input_encoder=self.encoders[k_-1],pooling_map=self.pooling_map[k_],pooling_type=self.ksage_pooling_type))
-            self.encoders.append(SageEncoder(input_encoder=self.pooling_layers[k_],fanouts=self.fanouts,adj=self.adj[k_],aggregator_type='mean',concat=False))
+            self.encoders.append(SageEncoder(input_encoder=self.pooling_layers[k_],fanouts=self.fanouts,adj=self.adj[k_],aggregator_type=self.ksage_aggregator_type,concat=self.concat))
             self.intra_k_pooling_layers.append(PoolingLayer(input_encoder=self.encoders[k_],pooling_map=self.reverse_pooling_map[k_],pooling_type=intra_k_pooling_type,sample_num=intra_k_pooling_num[k_-1]))
         
         self.inter_k_pooling_type = inter_k_pooling_type
