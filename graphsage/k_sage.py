@@ -78,8 +78,11 @@ class SageEncoder(Layer):
                 h = aggregator((hidden[hop], tf.reshape(hidden[hop + 1], neigh_shape)))
                 next_hidden.append(h)
             hidden = next_hidden
-        output_shape = inputs_shape.concatenate(self.output_dim)
-        output_shape = [d if d is not None else -1 for d in output_shape.as_list()]
+        output_shape = [-1]
+        if inputs_shape.ndims:
+            for i in range(1,inputs_shape.ndims):
+                output_shape.append(inputs_shape[i].value)
+        output_shape.append(self.output_dim)
         return tf.reshape(hidden[0],output_shape)
 
 class PoolingLayer(Layer):
@@ -99,6 +102,7 @@ class PoolingLayer(Layer):
             pooling_map_ = tf.transpose(tf.random_shuffle(tf.transpose(self.pooling_map)))
             pooling_map_ = tf.slice(pooling_map_, [0,0], [-1,self.sample_num])
         inputs_ = self.input_encoder(tf.nn.embedding_lookup(pooling_map_, inputs))
+        print('***'+str(inputs_.shape)+self.name)
         if self.pooling_type == 'mean':
             outputs = tf.reduce_mean(inputs_, axis=1)
         elif self.pooling_type == 'max':
@@ -175,10 +179,15 @@ class KSage(GeneralizedModel):
     def __call__(self, inputs):
         if self.inter_k_pooling_type == 'concat_and_dense':
             inputs_ = [self.encoders[1](inputs)]
-            for k_ in range(2,self.k+1):
-                inputs_.append(self.intra_k_pooling_layers[k_](inputs))
-            inputs__ = tf.concat(inputs_,axis=-1)
-            return self.inter_dense(inputs__)
+            if self.k == 1:
+	            return inputs_[0]
+            else:
+                for k_ in range(2,self.k+1):
+                    inputs_.append(self.intra_k_pooling_layers[k_](inputs))
+                print(inputs_[0].shape)
+                print(inputs_[1].shape)
+                inputs__ = tf.concat(inputs_,axis=-1)
+                return self.inter_dense(inputs__)
         else:
             inputs_ = [tf.expand_dims(self.encoders[1](inputs),axis=1)]
             for k_ in range(2,self.k+1):
@@ -188,9 +197,8 @@ class KSage(GeneralizedModel):
                 return tf.reduce_mean(inputs__,axis=1)
             else:
                 return tf.reduce_max(inputs__,axis=1)
-
-#if __name__ == "__main__":
     '''
+if __name__ == "__main__":
     a = ShallowEncoder(node_nums=5, identity_dim=16, features=None, output_dim=5)
     adj_ = np.array([[0,1,2,3,4] for i in range(5)])
     b = SageEncoder(input_encoder=a, fanouts=[5,5], adj=adj_)
@@ -201,4 +209,3 @@ class KSage(GeneralizedModel):
         sess.run(tf.global_variables_initializer())
         print sess.run(d(inputs_),feed_dict={inputs_:[76,250,294,83]})
     '''
-    

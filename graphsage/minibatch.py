@@ -225,8 +225,8 @@ class NodeMinibatchIterator(object):
         return label_vec
 
     def construct_adj(self):
-        adj = len(self.id2idx)*np.ones((len(self.id2idx)+1, self.max_degree))
-        deg = np.zeros((len(self.id2idx),))
+        adj = np.zeros((len(self.id2idx)+1, self.max_degree))
+        deg = np.zeros((len(self.id2idx)+1,))
 
         for nodeid in self.G.nodes():
             if self.G.node[nodeid]['test'] or self.G.node[nodeid]['val']:
@@ -245,7 +245,7 @@ class NodeMinibatchIterator(object):
         return adj, deg
 
     def construct_test_adj(self):
-        adj = len(self.id2idx)*np.ones((len(self.id2idx)+1, self.max_degree))
+        adj = np.zeros((len(self.id2idx)+1, self.max_degree))
         for nodeid in self.G.nodes():
             neighbors = np.array([self.id2idx[neighbor] 
                 for neighbor in self.G.neighbors(nodeid)])
