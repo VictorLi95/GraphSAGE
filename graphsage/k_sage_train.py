@@ -23,9 +23,10 @@ flags.DEFINE_string('inter_k_pooling_type','concat_and_dense','How to combine th
 flags.DEFINE_boolean('supervised',True,'Use supervised training setting or unsupervised.')
 flags.DEFINE_integer('num_epochs',50,'Number of epochs in training process.')
 flags.DEFINE_integer('evaluate_per_epochs',5,'Evaluate every the specified number of training steps.')
-flags.DEFINE_float('train_ratio',0.1,'Ratio of training nodes/all nodes or training edges/all edges.')
-flags.DEFINE_float('val_ratio',0.1,'Ratio of validation nodes/all nodes or training edges/all edges.')
-flags.DEFINE_integer('batch_size',40,'Size of the training batch.')
+flags.DEFINE_integer('train_nodes_cnt',140,'Number of nodes for training.')
+flags.DEFINE_integer('val_nodes_cnt',500,'Number of nodes for validation.')
+flags.DEFINE_integer('test_nodes_cnt',1000,'Number of nodes for test.')
+flags.DEFINE_integer('batch_size',20,'Size of the training batch.')
 flags.DEFINE_float('learning_rate',0.001,'Learning rate of the training process.')
 flags.DEFINE_float('weight_decay', 0.0, 'weight for l2 loss on embedding matrix.')
 flags.DEFINE_float('dropout', 0.0, 'Value of dropout.')
@@ -40,7 +41,8 @@ def calc_f1(y_true, y_pred):
         y_pred[y_pred <= 0.5] = 0 
     return metrics.f1_score(y_true, y_pred, average="micro"), metrics.f1_score(y_true, y_pred, average="macro")  #micro f1 score and macro f1 score
 
-def incremental_evaluate(sess, preds, loss, minibatch_iter, size, test=False):
+def incremental_evaluate(sess, preds, loss, minibatch_iter, size, data='val'):
+    assert data=='train' or data=='val' or data=='test', 'data should be one of [train, val, test]'
     t_test = time.time()
     finished = False
     val_losses = []
@@ -49,7 +51,7 @@ def incremental_evaluate(sess, preds, loss, minibatch_iter, size, test=False):
     iter_num = 0
     finished = False
     while not finished:
-        feed_dict_val, batch_labels, finished, _  = minibatch_iter.incremental_node_val_feed_dict(size, iter_num, test=test)
+        feed_dict_val, batch_labels, finished, _  = minibatch_iter.incremental_node_val_feed_dict(size, iter_num, data)
         node_outs_val = sess.run([preds, loss], 
                          feed_dict=feed_dict_val)
         val_preds.append(node_outs_val[0])
@@ -62,6 +64,7 @@ def incremental_evaluate(sess, preds, loss, minibatch_iter, size, test=False):
     return np.mean(val_losses), f1_scores[0], f1_scores[1], (time.time() - t_test)
 
 if __name__ == '__main__':
+    assert FLAGS.train_nodes_cnt % FLAGS.batch_size == 0 and FLAGS.val_nodes_cnt % FLAGS.batch_size == 0 and FLAGS.test_nodes_cnt % FLAGS.batch_size == 0, 'train/val/test nodes cnt must be integral mutiples of batch size. '
     FLAGS.fanouts = map(int, FLAGS.fanouts)
     FLAGS.intra_k_pooling_num = map(int, FLAGS.intra_k_pooling_num)
     G = build_graph(FLAGS.graph_name)
@@ -73,17 +76,19 @@ if __name__ == '__main__':
     
     if FLAGS.supervised:
         _, id_map, _, _ = build_k_graph(G, 1)
+        G_train_val_test_nodes = np.random.choice(G.nodes(), FLAGS.train_nodes_cnt + FLAGS.val_nodes_cnt + FLAGS.test_nodes_cnt, replace=False)
+        
         for n in G.nodes():
-            tmp = np.random.random()
-            if tmp < FLAGS.train_ratio:
-                G.node[n]['val'] = False
-                G.node[n]['test'] = False
-            elif tmp < FLAGS.train_ratio + FLAGS.val_ratio:
-                G.node[n]['val'] = True
-                G.node[n]['test'] = False
-            else:
-                G.node[n]['val'] = False
-                G.node[n]['test'] = True
+            G.node[n]['train'] = False
+            G.node[n]['val'] = False
+            G.node[n]['test'] = False
+        for n in G_train_val_test_nodes[:FLAGS.train_nodes_cnt]:
+            G.node[n]['train'] = True
+        for n in G_train_val_test_nodes[FLAGS.train_nodes_cnt:FLAGS.train_nodes_cnt+FLAGS.val_nodes_cnt]:
+            G.node[n]['val'] = True
+        for n in G_train_val_test_nodes[FLAGS.train_nodes_cnt+FLAGS.val_nodes_cnt:]:
+            G.node[n]['test'] = True
+                
         for edge in G.edges():
             if (G.node[edge[0]]['val'] or G.node[edge[1]]['val'] or G.node[edge[0]]['test'] or G.node[edge[1]]['test']):
                 G[edge[0]][edge[1]]['train_removed'] = True
@@ -92,8 +97,8 @@ if __name__ == '__main__':
 
         num_classes = len(G.graph['label_set'])
         class_map = {n:G.node[n]['label'] for n in G.nodes()}
-        placeholders = {    'labels' : tf.placeholder(tf.float32, shape=(None, num_classes), name='labels'),
-                            'batch' : tf.placeholder(tf.int32, shape=(None), name='batch1'),
+        placeholders = {    'labels' : tf.placeholder(tf.float32, shape=(FLAGS.batch_size, num_classes), name='labels'),
+                            'batch' : tf.placeholder(tf.int32, shape=(FLAGS.batch_size), name='batch1'),
                             'dropout': tf.placeholder_with_default(0., shape=(), name='dropout'),
                             'batch_size' : tf.placeholder(tf.int32, name='batch_size') }
         
@@ -103,7 +108,7 @@ if __name__ == '__main__':
             class_map,
             num_classes,
             batch_size=FLAGS.batch_size,
-            max_degree=G.graph['max_degree']) 
+            max_degree=G.graph['max_degree'])
         
         prediction_layer = Dense(FLAGS.output_dim, num_classes, dropout=FLAGS.dropout, act=lambda x:x)
         batch_embeddings = model(placeholders['batch'])
@@ -124,7 +129,7 @@ if __name__ == '__main__':
     with tf.Session() as sess:
         sess.run(tf.global_variables_initializer())
            
-        for epoch in range(FLAGS.num_epochs):
+        for epoch in range(1,FLAGS.num_epochs+1):
 
             minibatch.shuffle()
             
@@ -142,18 +147,19 @@ if __name__ == '__main__':
             print('Epoch '+str(epoch)+': loss = '+str(loss_in_one_epoch/batch_cnt))
 
             if epoch % FLAGS.evaluate_per_epochs == 0:
-                val_cost, val_f1_mic, val_f1_mac, duration = incremental_evaluate(sess, batch_preds, loss, minibatch, FLAGS.batch_size)
+                val_cost, val_f1_mic, val_f1_mac, duration = incremental_evaluate(sess, batch_preds, loss, minibatch, FLAGS.batch_size, data='val')
+                train_cost, train_f1_mic, train_f1_mac, duration = incremental_evaluate(sess, batch_preds, loss, minibatch, FLAGS.batch_size, data='train')
                 #train_cost = outs[1]
                 #train_f1_mic , train_f1_mac = calc_f1(labels, outs[2])
                 print("After Epoch"+str(epoch),
-                #      "train_loss=", "{:.5f}".format(train_cost),
-                #      "train_f1_mic=", "{:.5f}".format(train_f1_mic),
-                #      "train_f1_mac=", "{:.5f}".format(train_f1_mac),
+                      "train_loss=", "{:.5f}".format(train_cost),
+                      "train_f1_mic=", "{:.5f}".format(train_f1_mic),
+                      "train_f1_mac=", "{:.5f}".format(train_f1_mac),
                       "val_loss=", "{:.5f}".format(val_cost),
                       "val_f1_mic=", "{:.5f}".format(val_f1_mic),
                       "val_f1_mac=", "{:.5f}".format(val_f1_mac))
-                       
+        
         print("Optimization Finished!")
-        test_cost, test_f1_mic, test_f1_mac, duration = incremental_evaluate(sess, batch_preds, loss, minibatch, FLAGS.batch_size, test=True)
+        test_cost, test_f1_mic, test_f1_mac, duration = incremental_evaluate(sess, batch_preds, loss, minibatch, FLAGS.batch_size, data='test')
         print('On test data:')
         print("loss={:.5f} f1_micro={:.5f} f1_macro={:.5f}".format(val_cost, val_f1_mic, val_f1_mac))

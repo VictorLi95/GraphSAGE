@@ -25,7 +25,7 @@ class ShallowEncoder(Layer):
             else:
                 self.outputs_ = self.features
             
-        self.dense = Dense(input_dim = identity_dim + (features.shape[1] if not features is None else 0), output_dim=output_dim)
+        self.dense = Dense(input_dim = identity_dim + (features.shape[1] if not features is None else 0), output_dim=output_dim, act=lambda x:x)
         self.outputs = self.dense(self.outputs_)
 
     def __call__(self, inputs):
@@ -66,7 +66,7 @@ class SageEncoder(Layer):
         return samples, support_sizes
 
     def __call__(self, inputs):
-        inputs_shape = inputs.shape
+        inputs_shape=inputs.shape
         inputs = tf.reshape(inputs,[-1])
         samples, support_sizes = self.sample(inputs)
         hidden = [self.input_encoder(node_samples) for node_samples in samples]
@@ -78,12 +78,8 @@ class SageEncoder(Layer):
                 h = aggregator((hidden[hop], tf.reshape(hidden[hop + 1], neigh_shape)))
                 next_hidden.append(h)
             hidden = next_hidden
-        output_shape = [-1]
-        if inputs_shape.ndims:
-            for i in range(1,inputs_shape.ndims):
-                output_shape.append(inputs_shape[i].value)
-        output_shape.append(self.output_dim)
-        print('output_shape='+str(output_shape))
+        output_shape = inputs_shape.concatenate(self.output_dim)
+        output_shape = [d if d is not None else -1 for d in output_shape.as_list()]
         return tf.reshape(hidden[0],output_shape)
 
 class PoolingLayer(Layer):
@@ -102,13 +98,11 @@ class PoolingLayer(Layer):
         else:
             pooling_map_ = tf.transpose(tf.random_shuffle(tf.transpose(self.pooling_map)))
             pooling_map_ = tf.slice(pooling_map_, [0,0], [-1,self.sample_num])
-        print('********',pooling_map_.shape)
         inputs_ = self.input_encoder(tf.nn.embedding_lookup(pooling_map_, inputs))
-        print('***'+str(inputs_.shape)+self.name)
         if self.pooling_type == 'mean':
             outputs = tf.reduce_mean(inputs_, axis=1)
         elif self.pooling_type == 'max':
-            outputs = tf.reduce_max(inputs_, axis=1) 
+            outputs = tf.reduce_max(inputs_, axis=1)
         return outputs
 
 class KSage(GeneralizedModel):
@@ -186,8 +180,6 @@ class KSage(GeneralizedModel):
             else:
                 for k_ in range(2,self.k+1):
                     inputs_.append(self.intra_k_pooling_layers[k_](inputs))
-                print(inputs_[0].shape)
-                print(inputs_[1].shape)
                 inputs__ = tf.concat(inputs_,axis=-1)
                 return self.inter_dense(inputs__)
         else:

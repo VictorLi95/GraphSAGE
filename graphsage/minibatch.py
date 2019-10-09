@@ -5,6 +5,7 @@ import numpy as np
 
 np.random.seed(123)
 
+'''
 class EdgeMinibatchIterator(object):
     
     """ This minibatch iterator iterates over batches of sampled edges or
@@ -174,6 +175,7 @@ class EdgeMinibatchIterator(object):
         self.train_edges = np.random.permutation(self.train_edges)
         self.nodes = np.random.permutation(self.nodes)
         self.batch_num = 0
+'''
 
 class NodeMinibatchIterator(object):
     
@@ -203,16 +205,17 @@ class NodeMinibatchIterator(object):
         self.label_map = label_map
         self.num_classes = num_classes
 
-        self.adj, self.deg = self.construct_adj()
-        self.test_adj = self.construct_test_adj()
+        #self.adj, self.deg = self.construct_adj()
+        #self.test_adj = self.construct_test_adj()
 
         self.val_nodes = [n for n in self.G.nodes() if self.G.node[n]['val']]
         self.test_nodes = [n for n in self.G.nodes() if self.G.node[n]['test']]
 
         self.no_train_nodes_set = set(self.val_nodes + self.test_nodes)
-        self.train_nodes = set(G.nodes()).difference(self.no_train_nodes_set)
+        self.train_nodes = [n for n in self.G.nodes() if self.G.node[n]['train']]
+        #self.train_nodes = set(G.nodes()).difference(self.no_train_nodes_set)
         # don't train on nodes that only have edges to test set
-        self.train_nodes = [n for n in self.train_nodes if self.deg[id2idx[n]] > 0]
+        #self.train_nodes = [n for n in self.train_nodes if self.deg[id2idx[n]] > 0]
 
     def _make_label_vec(self, node):
         label = self.label_map[node]
@@ -223,7 +226,8 @@ class NodeMinibatchIterator(object):
             class_ind = self.label_map[node]
             label_vec[class_ind] = 1
         return label_vec
-
+    
+    '''
     def construct_adj(self):
         adj = np.zeros((len(self.id2idx)+1, self.max_degree))
         deg = np.zeros((len(self.id2idx)+1,))
@@ -257,6 +261,7 @@ class NodeMinibatchIterator(object):
                 neighbors = np.random.choice(neighbors, self.max_degree, replace=True)
             adj[self.id2idx[nodeid], :] = neighbors
         return adj
+    '''
 
     def end(self):
         return self.batch_num * self.batch_size >= len(self.train_nodes)
@@ -284,11 +289,13 @@ class NodeMinibatchIterator(object):
         ret_val = self.batch_feed_dict(val_nodes)
         return ret_val[0], ret_val[1]
 
-    def incremental_node_val_feed_dict(self, size, iter_num, test=False):
-        if test:
-            val_nodes = self.test_nodes
-        else:
+    def incremental_node_val_feed_dict(self, size, iter_num, data='val'):
+        if data=='train':
+            val_nodes = self.train_nodes
+        elif data=='val':
             val_nodes = self.val_nodes
+        else:
+            val_nodes = self.test_nodes
         val_node_subset = val_nodes[iter_num*size:min((iter_num+1)*size, 
             len(val_nodes))]
 
