@@ -83,6 +83,7 @@ class SageEncoder(Layer):
             for i in range(1,inputs_shape.ndims):
                 output_shape.append(inputs_shape[i].value)
         output_shape.append(self.output_dim)
+        print('output_shape='+str(output_shape))
         return tf.reshape(hidden[0],output_shape)
 
 class PoolingLayer(Layer):
@@ -101,6 +102,7 @@ class PoolingLayer(Layer):
         else:
             pooling_map_ = tf.transpose(tf.random_shuffle(tf.transpose(self.pooling_map)))
             pooling_map_ = tf.slice(pooling_map_, [0,0], [-1,self.sample_num])
+        print('********',pooling_map_.shape)
         inputs_ = self.input_encoder(tf.nn.embedding_lookup(pooling_map_, inputs))
         print('***'+str(inputs_.shape)+self.name)
         if self.pooling_type == 'mean':
