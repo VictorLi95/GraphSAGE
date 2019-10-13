@@ -138,16 +138,16 @@ if __name__ == '__main__':
             loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(logits=batch_outputs,labels=placeholders['labels'])) 
         else:
             loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(logits=batch_outputs,labels=placeholders['labels']))
-        
+       
         optimizer = tf.train.AdamOptimizer(learning_rate=FLAGS.learning_rate)
+        '''
         grads_and_vars = optimizer.compute_gradients(self.loss)
         clipped_grads_and_vars = [(tf.clip_by_value(grad, -5.0, 5.0) if grad is not None else None, var) 
                 for grad, var in grads_and_vars]
         self.grad, _ = clipped_grads_and_vars[0]
         self.opt_op = self.optimizer.apply_gradients(clipped_grads_and_vars)
-
-        
-        #train_op = optimizer.minimize(loss)
+        '''
+        train_op = optimizer.minimize(loss)
     
     with tf.Session() as sess:
         sess.run(tf.global_variables_initializer())
