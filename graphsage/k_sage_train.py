@@ -28,7 +28,7 @@ flags.DEFINE_integer('val_nodes_cnt',500,'Number of nodes for validation.')
 flags.DEFINE_integer('test_nodes_cnt',1000,'Number of nodes for test.')
 flags.DEFINE_integer('batch_size',20,'Size of the training batch.')
 flags.DEFINE_float('learning_rate',0.01,'Learning rate of the training process.')
-flags.DEFINE_float('weight_decay', 0.0, 'weight for l2 loss on embedding matrix.')
+flags.DEFINE_float('weight_decay', 0.001, 'weight for l2 loss on embedding matrix.')
 flags.DEFINE_float('dropout', 0.0, 'Value of dropout.')
 flags.DEFINE_boolean('sigmoid_loss',False,'Use sigmoid or softmax for the prediction layer activation.')
 
@@ -64,6 +64,20 @@ def incremental_evaluate(sess, preds, loss, minibatch_iter, size, data='val'):
     return np.mean(val_losses), f1_scores[0], f1_scores[1], (time.time() - t_test)
 
 if __name__ == '__main__':
+    '''
+    G = build_graph('cora')
+    model = KSage(G=G,k=1,identity_dim=10,
+                  use_features=False,output_dim=10,fanouts=[2,2],
+                  ksage_aggregator_type='mean',ksage_pooling_type='mean',
+                  intra_k_pooling_num=[1],intra_k_pooling_type='mean',
+                  inter_k_pooling_type='concat_and_dense')
+    sess = tf.InteractiveSession()
+    sess.run(tf.global_variables_initializer())
+    tmp = tf.placeholder(tf.int32, shape=(5,))
+    #print sess.run(model.encoders[1].sample(tmp)[0],feed_dict={tmp:[1,2,3,4,5]})
+    print sess.run(model.initial_encoder(tmp),feed_dict={tmp:[1,2,3,4,5]})
+    print sess.run(model.encoders[1](tmp),feed_dict={tmp:[1,2,3,4,5]})
+    '''
     assert FLAGS.train_nodes_cnt % FLAGS.batch_size == 0 and FLAGS.val_nodes_cnt % FLAGS.batch_size == 0 and FLAGS.test_nodes_cnt % FLAGS.batch_size == 0, 'train/val/test nodes cnt must be integral mutiples of batch size. '
     FLAGS.fanouts = map(int, FLAGS.fanouts)
     FLAGS.intra_k_pooling_num = map(int, FLAGS.intra_k_pooling_num)
@@ -103,13 +117,13 @@ if __name__ == '__main__':
                 G.node[n]['val']=True
             j+=1     
         
-        '''
-        for edge in G.edges():
-            if (G.node[edge[0]]['val'] or G.node[edge[1]]['val'] or G.node[edge[0]]['test'] or G.node[edge[1]]['test']):
-                G[edge[0]][edge[1]]['train_removed'] = True
-            else:
-                G[edge[0]][edge[1]]['train_removed'] = False
-        '''
+        
+        #for edge in G.edges():
+        #   if (G.node[edge[0]]['val'] or G.node[edge[1]]['val'] or G.node[edge[0]]['test'] or G.node[edge[1]]['test']):
+        #       G[edge[0]][edge[1]]['train_removed'] = True
+        #   else:
+        #       G[edge[0]][edge[1]]['train_removed'] = False
+        
         num_classes = len(G.graph['label_set'])
         class_map = {n:G.node[n]['label'] for n in G.nodes()}
         placeholders = {    'labels' : tf.placeholder(tf.float32, shape=(FLAGS.batch_size, num_classes), name='labels'),
@@ -138,16 +152,23 @@ if __name__ == '__main__':
             loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(logits=batch_outputs,labels=placeholders['labels'])) 
         else:
             loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(logits=batch_outputs,labels=placeholders['labels']))
-       
+        for var in prediction_layer.vars.values():
+            loss += FLAGS.weight_decay * tf.nn.l2_loss(var)
+        for sage_encoder_ in model.encoders:
+            if not sage_encoder_ is None:
+                for aggregator_ in sage_encoder_.aggregators:
+                    for var in aggregator_.vars.values():
+                        loss += FLAGS.weight_decay *tf.nn.l2_loss(var)
+        
         optimizer = tf.train.AdamOptimizer(learning_rate=FLAGS.learning_rate)
-        '''
-        grads_and_vars = optimizer.compute_gradients(self.loss)
+       
+        grads_and_vars = optimizer.compute_gradients(loss)
         clipped_grads_and_vars = [(tf.clip_by_value(grad, -5.0, 5.0) if grad is not None else None, var) 
                 for grad, var in grads_and_vars]
-        self.grad, _ = clipped_grads_and_vars[0]
-        self.opt_op = self.optimizer.apply_gradients(clipped_grads_and_vars)
-        '''
-        train_op = optimizer.minimize(loss)
+        grad, _ = clipped_grads_and_vars[0]
+        
+        train_op = optimizer.apply_gradients(clipped_grads_and_vars)
+       #train_op = optimizer.minimize(loss)
     
     with tf.Session() as sess:
         sess.run(tf.global_variables_initializer())
@@ -186,10 +207,11 @@ if __name__ == '__main__':
         test_cost, test_f1_mic, test_f1_mac, duration = incremental_evaluate(sess, batch_preds, loss, minibatch, FLAGS.batch_size, data='test')
         print('On test data:')
         print("loss={:.5f} f1_micro={:.5f} f1_macro={:.5f}".format(val_cost, val_f1_mic, val_f1_mac))
-
+        '''
         minibatch.shuffle()
         while not minibatch.end():
             feed_dict, labels = minibatch.next_minibatch_feed_dict()
             feed_dict.update({placeholders['dropout']: FLAGS.dropout})
             print(placeholders['batch'],sess.run(batch_embeddings, feed_dict=feed_dict))
             break
+        '''

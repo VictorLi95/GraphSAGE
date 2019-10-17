@@ -6,6 +6,10 @@ from neigh_samplers import *
 from models import *
 from layers import *
 
+#flags = tf.app.flags
+#FLAGS = flags.FLAGS
+#flags.DEFINE_float('weight_decay', 0.0, 'weight for l2 loss on embedding matrix.')
+
 class ShallowEncoder(Layer):
     def __init__(self, node_nums, identity_dim, features, output_dim, **kwargs):
         assert identity_dim > 0 or not features is None, 'Must use id-based embeddings or feature-based embeddings or both.'
@@ -49,7 +53,7 @@ class SageEncoder(Layer):
             self.aggregator_cls = MeanPoolingAggregator
         elif aggregator_type == "gcn":
             self.aggregator_cls = GCNAggregator
-        self.aggregators = [self.aggregator_cls(input_dim=self.output_dim, output_dim=self.output_dim,concat=concat) for i in range(len(fanouts)-1),self.aggregator_cls(input_dim=self.output_dim, output_dim=self.output_dim,concat=concat,act=lambda x : x)]
+        self.aggregators = [self.aggregator_cls(input_dim=self.output_dim, output_dim=self.output_dim,concat=concat,act=lambda x:x) for i in range(len(fanouts)-1),self.aggregator_cls(input_dim=self.output_dim, output_dim=self.output_dim,concat=concat,act=lambda x : x)]
         with tf.variable_scope(self.name):
             self.adj = tf.get_variable(name='adj',initializer=tf.constant(adj,dtype=tf.int32),trainable=False)
         self.neigh_sampler = UniformNeighborSampler(self.adj)
@@ -158,6 +162,8 @@ class KSage(GeneralizedModel):
             features = np.zeros((G.number_of_nodes()+1,G.graph['features_dim']))
             for n in G.nodes():
                 features[id_map_[n]] = G.node[n]['features']
+        else:
+            features = None
 
         self.initial_encoder = ShallowEncoder(self.adj[1].shape[0], identity_dim, features, output_dim=self.output_dim)
         self.encoders = [None, SageEncoder(input_encoder=self.initial_encoder,fanouts=self.fanouts,adj=self.adj[1],aggregator_type=self.ksage_aggregator_type,concat=self.concat)]
@@ -191,15 +197,16 @@ class KSage(GeneralizedModel):
                 return tf.reduce_mean(inputs__,axis=1)
             else:
                 return tf.reduce_max(inputs__,axis=1)
-    '''
+    
 if __name__ == "__main__":
-    a = ShallowEncoder(node_nums=5, identity_dim=16, features=None, output_dim=5)
-    adj_ = np.array([[0,1,2,3,4] for i in range(5)])
-    b = SageEncoder(input_encoder=a, fanouts=[5,5], adj=adj_)
-    c = PoolingLayer(input_encoder=b, pooling_type='max',pooling_map=np.array([[1,2],[1,2],[3,4],[0,4]]))
-    inputs_ = tf.placeholder(tf.int32,[None])
-    d = KSage(graph_name='cora',k=3,identity_dim=5,features=None,output_dim=5,fanouts=[5,5],intra_k_pooling_num=[1,5,5])
-    with tf.Session() as sess:
-        sess.run(tf.global_variables_initializer())
-        print sess.run(d(inputs_),feed_dict={inputs_:[76,250,294,83]})
-    '''
+    G = build_graph('cora')
+    model = KSage(G=G,k=1,identity_dim=10,
+                  use_features=False,output_dim=10,fanouts=[5,5],
+                  ksage_aggregator_type='mean',ksage_pooling_type='mean',
+                  intra_k_pooling_num=[1],intra_k_pooling_type='mean',
+                  inter_k_pooling_type='concat_and_dense')
+    sess = tf.InteractiveSession()
+    sess.run(tf.global_variables_initializer())
+    tmp = tf.placeholder(tf.int32, shape=(None))
+    print sess.run(model.encoders[1].sample(tmp)[0],feed_dict={tmp:[1,2,3,4,5]})
+    
