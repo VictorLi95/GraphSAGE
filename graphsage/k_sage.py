@@ -53,7 +53,9 @@ class SageEncoder(Layer):
             self.aggregator_cls = MeanPoolingAggregator
         elif aggregator_type == "gcn":
             self.aggregator_cls = GCNAggregator
-        self.aggregators = [self.aggregator_cls(input_dim=self.output_dim, output_dim=self.output_dim,concat=concat,act=lambda x:x) for i in range(len(fanouts)-1),self.aggregator_cls(input_dim=self.output_dim, output_dim=self.output_dim,concat=concat,act=lambda x : x)]
+        #self.aggregators = [self.aggregator_cls(input_dim=self.output_dim, output_dim=self.output_dim,concat=concat,act=lambda x:x) for i in range(len(fanouts)-1),
+        #                    self.aggregator_cls(input_dim=self.output_dim, output_dim=self.output_dim,concat=concat,act=lambda x:x)]
+        self.aggregators = [self.aggregator_cls(input_dim=self.output_dim, output_dim=self.output_dim,concat=concat) for i in range(len(fanouts))]
         with tf.variable_scope(self.name):
             self.adj = tf.get_variable(name='adj',initializer=tf.constant(adj,dtype=tf.int32),trainable=False)
         self.neigh_sampler = UniformNeighborSampler(self.adj)
@@ -209,4 +211,3 @@ if __name__ == "__main__":
     sess.run(tf.global_variables_initializer())
     tmp = tf.placeholder(tf.int32, shape=(None))
     print sess.run(model.encoders[1].sample(tmp)[0],feed_dict={tmp:[1,2,3,4,5]})
-    
